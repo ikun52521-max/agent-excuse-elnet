@@ -40,6 +40,26 @@ def pick_output_dir() -> str:
         return fallback
 
 
+def verify_written(path: str, expected: str) -> bool:
+    """Re-read the file and confirm it holds exactly the expected line.
+
+    A partial or truncated write (disk full, killed mid-flush) would
+    otherwise pass silently and leave the grader with a short or empty
+    entry; catching it here makes the run fail loudly instead.
+    """
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as handle:
+            actual = handle.read()
+    except OSError as exc:
+        print(f"could not re-read {path}: {exc}", file=sys.stderr)
+        return False
+    if actual != expected + "\n":
+        print(f"verification failed: {path} holds {len(actual)} chars, "
+              f"expected {len(expected) + 1}", file=sys.stderr)
+        return False
+    return True
+
+
 def main() -> int:
     excuse = EXCUSE.strip()
     if not excuse or len(excuse) > MAX_CHARS:
@@ -51,8 +71,12 @@ def main() -> int:
     path = os.path.join(out_dir, "entry.txt")
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(excuse + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     # The grader collects the output as another user: leave it readable.
     os.chmod(path, 0o644)
+    if not verify_written(path, excuse):
+        return 1
     print(excuse)
     return 0
 
